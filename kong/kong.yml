@@ -1,0 +1,49 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: user-service
+    url: http://user-service:3000
+    routes:
+      - name: user-routes
+        paths:
+          - /users
+        strip_path: false
+
+  - name: payment-processor
+    url: http://payment-processor:3001
+    routes:
+      - name: payment-routes
+        paths:
+          - /payments
+        strip_path: false
+
+  - name: ledger-service
+    url: http://ledger-service:3002
+    routes:
+      - name: ledger-routes
+        paths:
+          - /ledger
+        strip_path: false
+
+plugins:
+  - name: key-auth
+    # Enable key-auth globally. All routes will require an 'apikey' header
+    # unless disabled per-route or per-service.
+    enabled: true
+    config:
+      key_names:
+        - apikey
+      hide_credentials: true
+
+  - name: rate-limiting
+    # Global rate limit of 100 requests per minute per IP
+    enabled: true
+    config:
+      minute: 100
+      policy: local
+
+consumers:
+  - username: test-consumer
+    keyauth_credentials:
+      - key: "test-api-key"

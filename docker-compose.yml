@@ -1,0 +1,106 @@
+version: "3.9"
+
+services:
+  kong:
+    image: kong:3.5.0-ubuntu
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
+      KONG_ADMIN_GUI_LISTEN: 0.0.0.0:8002, 0.0.0.0:8445 ssl
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+      - "8443:8443"
+      - "8444:8444"
+      - "8445:8445"
+    volumes:
+      - ./kong:/kong
+    networks:
+      - gateway-net
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gateway-net
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_MULTIPLE_DATABASES: "users_db,payments_db,ledger_db"
+    ports:
+      - "5432:5432" 
+    volumes:
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/postgres-init.sh
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gateway-net
+
+  user-service:
+    build:
+      context: ./apps/user-service
+    environment:
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/users_db?sslmode=disable
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - gateway-net
+
+  payment-processor:
+    build:
+      context: ./apps/payment-processor
+    environment:
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/payments_db?sslmode=disable
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - gateway-net
+
+  ledger-service:
+    build:
+      context: ./apps/ledger-service
+    environment:
+      DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/ledger_db?sslmode=disable
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      PORT: 3002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - gateway-net
+
+networks:
+  gateway-net:
+    driver: bridge
