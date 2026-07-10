@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kong
+  template:
+    metadata:
+      labels:
+        app: kong
+    spec:
+      containers:
+        - name: kong
+          image: {{ .Values.kong.image }}
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: "/kong/kong.yml"
+            - name: KONG_PROXY_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_PROXY_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_ADMIN_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_ADMIN_LISTEN
+              value: "0.0.0.0:8001, 0.0.0.0:8444 ssl"
+            - name: KONG_ADMIN_GUI_LISTEN
+              value: "0.0.0.0:8002, 0.0.0.0:8445 ssl"
+            - name: KONG_ADMIN_GUI_URL
+              value: "http://localhost:8002"
+          ports:
+            - containerPort: 8000
+            - containerPort: 8001
+            - containerPort: 8002
+            - containerPort: 8443
+            - containerPort: 8444
+            - containerPort: 8445
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong/kong.yml
+              subPath: kong.yml
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+spec:
+  selector:
+    app: kong
+  type: NodePort
+  ports:
+    - name: proxy
+      port: 8000
+      targetPort: 8000
+      nodePort: 30000
+    - name: admin
+      port: 8001
+      targetPort: 8001
+      nodePort: 30001
+    - name: admin-gui
+      port: 8002
+      targetPort: 8002
+      nodePort: 30002
+    - name: proxy-ssl
+      port: 8443
+      targetPort: 8443
+      nodePort: 30443
+    - name: admin-ssl
+      port: 8444
+      targetPort: 8444
+      nodePort: 30444
+    - name: admin-gui-ssl
+      port: 8445
+      targetPort: 8445
+      nodePort: 30445

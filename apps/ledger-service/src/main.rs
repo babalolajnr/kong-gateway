@@ -1,12 +1,12 @@
 use axum::{extract::State, routing::get, Json, Router};
+use axum_prometheus::PrometheusMetricLayer;
 use chrono::{DateTime, Utc};
 use futures::StreamExt; // Trait for iterating over AMQP consumers
-use lapin::{
-    options::*, types::FieldTable, Connection, ConnectionProperties,
-};
+use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::sync::Arc;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 
 /// The shared application state that Axum will pass to our route handlers.
@@ -17,13 +17,15 @@ struct AppState {
 
 /// A struct representing a ledger entry in our PostgreSQL database.
 /// `sqlx::FromRow` allows automatic mapping from SQL query results.
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 struct LedgerEntry {
+    #[schema(value_type = String)]
     id: Uuid,
     payment_id: String,
     amount: i64,
     currency: String,
     status: String,
+    #[schema(value_type = String)]
     created_at: DateTime<Utc>,
 }
 
@@ -34,6 +36,10 @@ struct PaymentMessage {
     amount: i64,
     currency: String,
 }
+
+#[derive(OpenApi)]
+#[openapi(paths(list_ledger), components(schemas(LedgerEntry)))]
+struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
@@ -68,7 +74,7 @@ async fn main() {
             status VARCHAR NOT NULL,
             created_at TIMESTAMPTZ NOT NULL
         );
-        "#
+        "#,
     )
     .execute(&db_pool)
     .await
@@ -89,18 +95,27 @@ async fn main() {
 
     // 7. Configure Axum Router
     let state = AppState { db: db_pool };
-    let app = Router::new()
-        // Define the route for listing ledger entries
+
+    // Create API router with state
+    let api_router = Router::new()
         .route("/ledger", get(list_ledger))
-        // Pass our AppState to the router
         .with_state(state);
+    // Setup Prometheus metrics layer
+    let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+
+    // Create root router merging docs and api
+    let app = Router::new()
+        .route("/metrics", get(|| async move { metric_handle.render() }))
+        .merge(SwaggerUi::new("/docs/ledger").url("/docs/ledger/openapi.json", ApiDoc::openapi()))
+        .merge(api_router)
+        .layer(prometheus_layer);
 
     // 8. Bind the HTTP server to a port and start listening
     let port = 3002;
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     tracing::info!("Ledger Service HTTP server listening on {}", addr);
-    
+
     // Start serving HTTP traffic
     axum::serve(listener, app).await.unwrap();
 }
@@ -109,24 +124,32 @@ async fn main() {
 /// and saving new payments into the PostgreSQL database.
 async fn consume_messages(conn: Connection, db: PgPool) {
     // Open a communication channel with RabbitMQ
-    let channel = conn.create_channel().await.expect("Failed to create AMQP channel");
+    let channel = conn
+        .create_channel()
+        .await
+        .expect("Failed to create AMQP channel");
 
     // Declare the queue to ensure it exists before we try to consume from it.
-    let mut options = QueueDeclareOptions::default();
-    options.durable = true;
-    channel.queue_declare(
-        "payment_completed_queue",
-        options,
-        FieldTable::default(),
-    ).await.expect("Failed to declare queue");
+    let options = QueueDeclareOptions {
+        durable: true,
+        ..Default::default()
+    };
+
+    channel
+        .queue_declare("payment_completed_queue", options, FieldTable::default())
+        .await
+        .expect("Failed to declare queue");
 
     // Create a consumer that listens to our queue
-    let mut consumer = channel.basic_consume(
-        "payment_completed_queue",
-        "ledger_service_consumer", // A unique tag for this consumer
-        BasicConsumeOptions::default(),
-        FieldTable::default(),
-    ).await.expect("Failed to create consumer");
+    let mut consumer = channel
+        .basic_consume(
+            "payment_completed_queue",
+            "ledger_service_consumer", // A unique tag for this consumer
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .expect("Failed to create consumer");
 
     tracing::info!("Started consuming from 'payment_completed_queue'");
 
@@ -163,7 +186,10 @@ async fn consume_messages(conn: Connection, db: PgPool) {
                             if let Err(e) = delivery.ack(BasicAckOptions::default()).await {
                                 tracing::error!("Failed to ACK message: {}", e);
                             } else {
-                                tracing::info!("Successfully recorded ledger entry for payment {}", msg.payment_id);
+                                tracing::info!(
+                                    "Successfully recorded ledger entry for payment {}",
+                                    msg.payment_id
+                                );
                             }
                         }
                         Err(e) => {
@@ -188,6 +214,13 @@ async fn consume_messages(conn: Connection, db: PgPool) {
 
 /// Handler for `GET /ledger`.
 /// Returns all ledger entries in JSON format, ordered by newest first.
+#[utoipa::path(
+    get,
+    path = "/ledger",
+    responses(
+        (status = 200, description = "List of ledger entries", body = [LedgerEntry])
+    )
+)]
 async fn list_ledger(State(state): State<AppState>) -> Json<Vec<LedgerEntry>> {
     // Query the database for all ledger entries
     let entries = sqlx::query_as::<_, LedgerEntry>("SELECT * FROM ledger ORDER BY created_at DESC")

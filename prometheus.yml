@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'payment-processor'
+    static_configs:
+      - targets: ['payment-processor:3001']
+
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3000']
+
+  - job_name: 'ledger-service'
+    static_configs:
+      - targets: ['ledger-service:3002']

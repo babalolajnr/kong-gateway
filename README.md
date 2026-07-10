@@ -4,7 +4,7 @@ A toy payment gateway system built in a monorepo setup to demonstrate an event-d
 
 ## Architecture Overview
 
-The project uses **Kong** in DB-less mode to route traffic, enforce rate limiting, and apply key authentication. Behind the gateway, three independent microservices—each with its own isolated PostgreSQL database—handle the domain logic. They communicate asynchronously via **RabbitMQ**.
+The project uses **Kong** in DB-less mode to route traffic, enforce rate limiting, and apply JWT authentication. Behind the gateway, three independent microservices—each with its own isolated PostgreSQL database—handle the domain logic. They communicate asynchronously via **RabbitMQ** and expose OpenAPI documentation.
 
 For a detailed visual breakdown, check out the [Architecture Diagram](./architecture.md).
 
@@ -13,10 +13,11 @@ For a detailed visual breakdown, check out the [Architecture Diagram](./architec
 *   **API Gateway**: Kong (DB-less) + Kong Manager
 *   **Message Broker**: RabbitMQ
 *   **Database**: PostgreSQL 16 (3 isolated databases)
+*   **Observability**: Prometheus & Grafana
 *   **Monorepo Tooling**: Nx
 *   **Microservices**:
-    *   **User Service**: Node.js, TypeScript, Fastify
-    *   **Payment Processor**: Go, Gin
+    *   **User Service**: Node.js, TypeScript, Fastify (Auth, Wallets)
+    *   **Payment Processor**: Go, Gin (Transactional Outbox)
     *   **Ledger Service**: Rust, Axum
 
 ## Prerequisites
@@ -38,33 +39,51 @@ For a detailed visual breakdown, check out the [Architecture Diagram](./architec
     ```
     This will build the Docker images for the three microservices and spin up Kong, PostgreSQL, and RabbitMQ. Wait a few moments for the databases and message broker to become healthy.
 
-3.  **Access Kong Manager (Dashboard)**:
-    Open your browser and navigate to `http://localhost:8002` to visually inspect the routes and plugins configured in the gateway.
+3.  **Access Dashboards & Docs**:
+    *   **Kong Manager**: `http://localhost:8002`
+    *   **Prometheus**: `http://localhost:9090`
+    *   **Grafana**: `http://localhost:3000` (Login: admin / admin)
+    *   **Swagger API Docs**: `http://localhost:8000/docs/users`, `/docs/payments`, and `/docs/ledger`
 
 ## Testing the API
 
-Kong listens on port `8000` for client traffic. We have a pre-configured consumer with the API key: `test-api-key`.
+Kong listens on port `8000` for client traffic. Authentication is handled via **JWT**. 
 
-### 1. Create a User
+### 1. Register and Login
+First, create a user and log in to get a token:
 ```bash
+# Register
 curl -X POST http://localhost:8000/users \
-  -H "apikey: test-api-key" \
   -H "Content-Type: application/json" \
-  -d '{"name": "Alice", "email": "alice@example.com"}'
+  -d '{"name": "Alice", "email": "alice@example.com", "password": "password123"}'
+
+# Login
+TOKEN=$(curl -s -X POST http://localhost:8000/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "alice@example.com", "password": "password123"}' | jq -r .token)
 ```
 
-### 2. Process a Payment
+### 2. Fund Wallet
+Add money to the user's wallet:
+```bash
+curl -X POST http://localhost:8000/users/1/fund \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 500.00}'
+```
+
+### 3. Process a Payment
 ```bash
 curl -X POST http://localhost:8000/payments \
-  -H "apikey: test-api-key" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"user_id": 1, "amount": 150.50}'
 ```
-*This will save a "processing" payment in the `payments_db` and publish an event to RabbitMQ.*
+*This internally deducts the balance from the `user-service`, saves a "processing" payment in `payments_db` alongside an outbox event, and a background worker publishes it to RabbitMQ.*
 
-### 3. Check the Ledger
+### 4. Check the Ledger
 ```bash
 curl -X GET http://localhost:8000/ledger \
-  -H "apikey: test-api-key"
+  -H "Authorization: Bearer $TOKEN"
 ```
 *The `ledger-service` automatically consumes the RabbitMQ event in the background and saves the completed transaction to the `ledger_db`.*

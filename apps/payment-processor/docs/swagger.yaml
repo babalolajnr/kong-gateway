@@ -1,0 +1,41 @@
+basePath: /
+definitions:
+  main.PaymentRequest:
+    properties:
+      amount:
+        type: number
+      user_id:
+        type: integer
+    required:
+    - amount
+    - user_id
+    type: object
+host: localhost:8000
+info:
+  contact: {}
+  description: API for processing payments
+  title: Payment Processor API
+  version: "1.0"
+paths:
+  /payments:
+    post:
+      consumes:
+      - application/json
+      description: Creates a payment in processing state and emits an event
+      parameters:
+      - description: Payment Details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.PaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Process a new payment
+swagger: "2.0"

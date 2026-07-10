@@ -101,6 +101,24 @@ services:
     networks:
       - gateway-net
 
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - gateway-net
+
+  grafana:
+    image: grafana/grafana:10.1.5
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - gateway-net
+
 networks:
   gateway-net:
     driver: bridge

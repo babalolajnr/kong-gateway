@@ -1,0 +1,28 @@
+global:
+  namespace: default
+
+postgres:
+  image: "postgres:16"
+  user: "postgres"
+  password: "postgrespassword"
+  databases: "users_db,payments_db,ledger_db"
+
+rabbitmq:
+  image: "rabbitmq:3-management"
+
+prometheus:
+  image: "prom/prometheus:v2.45.0"
+
+grafana:
+  image: "grafana/grafana:10.1.5"
+
+microservices:
+  user:
+    image: "kong-gateway-user-service"
+  payment:
+    image: "kong-gateway-payment-processor"
+  ledger:
+    image: "kong-gateway-ledger-service"
+
+kong:
+  image: "kong:3.5.0-ubuntu"

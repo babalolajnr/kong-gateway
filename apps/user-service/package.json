@@ -12,13 +12,21 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@fastify/swagger": "^9.8.0",
+    "@fastify/swagger-ui": "^6.1.0",
     "amqplib": "^2.0.1",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "fastify": "^5.10.0",
-    "pg": "^8.22.0"
+    "fastify-metrics": "^13.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0",
+    "prom-client": "^15.1.3"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.8",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
     "ts-node": "^10.9.2",
