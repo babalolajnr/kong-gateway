@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  user-service:
+    build:
+      target: builder
+    command: ["npx", "ts-node", "src/index.ts"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/user-service/src
+          target: /app/src
+        - action: rebuild
+          path: ./apps/user-service/package.json
+
+  payment-processor:
+    build:
+      target: builder
+    command: ["go", "run", "main.go"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/payment-processor
+          target: /app
+          ignore:
+            - docs/
+        - action: rebuild
+          path: ./apps/payment-processor/go.mod
+
+  ledger-service:
+    build:
+      target: builder
+    command: ["cargo", "run", "--release"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./apps/ledger-service/src
+          target: /usr/src/ledger-service/src
+        - action: rebuild
+          path: ./apps/ledger-service/Cargo.toml

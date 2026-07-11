@@ -33,11 +33,20 @@ For a detailed visual breakdown, check out the [Architecture Diagram](./architec
     cd kong-gateway
     ```
 
-2.  **Spin up the infrastructure and services**:
+2.  **Choose your environment**:
+
+    **Option A: Local Development (Hot-Reloading with Docker Compose)**
+    Use this for writing code. The `docker-compose.override.yml` maps your source code into the containers and automatically recompiles when you save files.
     ```bash
-    docker compose up -d --build
+    make dev-all
     ```
-    This will build the Docker images for the three microservices and spin up Kong, PostgreSQL, and RabbitMQ. Wait a few moments for the databases and message broker to become healthy.
+    This spins up Kong, PostgreSQL, RabbitMQ, and the microservices with hot-reloading enabled.
+
+    **Option B: Production Simulation (Minikube & Helm)**
+    Use this to test the exact deployment manifests that run in production. This builds the images inside the cluster and deploys them using Helm.
+    ```bash
+    make k8s-deploy
+    ```
 
 3.  **Access Dashboards & Docs**:
     *   **Kong Manager**: `http://localhost:8002`
@@ -87,3 +96,11 @@ curl -X GET http://localhost:8000/ledger \
   -H "Authorization: Bearer $TOKEN"
 ```
 *The `ledger-service` automatically consumes the RabbitMQ event in the background and saves the completed transaction to the `ledger_db`.*
+
+## CI/CD and Production Workflow
+
+This repository is configured to demonstrate a realistic **Dev-to-Prod** pipeline:
+
+1. **Local Development**: Developers use `make dev-all` (Docker Compose) for instant feedback and hot-reloading while writing code.
+2. **Continuous Integration**: When code is pushed to `master`, a GitHub Actions pipeline (`.github/workflows/ci-cd.yaml`) automatically runs. It uses **Nx** to build all affected projects and builds their multi-stage Docker images.
+3. **Continuous Deployment**: The pipeline tags the new Docker images and deploys the `kong-stack` Helm chart to the Kubernetes cluster, performing a zero-downtime rolling update.
